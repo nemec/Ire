@@ -1,0 +1,67 @@
+Ire
+
+Introduction
+============
+
+This program watches a specified number of directories and matches any *new*
+files (whether copied, moved, downloaded, or otherwise) against the rules
+loaded from the config file. If there is a match, it executes the action
+tied to the rule.
+
+
+Requirements
+============
+
+PyInotify: http://pyinotify.sourceforge.net/
+
+
+Installation
+============
+
+Linux:
+No installation necessary.
+
+
+Running
+=======
+
+Until the graphical tool is complete, you must edit save.json to set your
+watches.
+In the rules list, add a new rule with the following data:
+  Name: the name of the rule
+  Description: a description of the rule
+  Pattern Type: one of AND or OR. Determines how multiple applied patterns
+    affect whether the rule matches.
+  Pattern List: a list of patterns. Style is the name of the pattern (check out
+    the __all__ list in patterns.py for a complete list of available patterns).
+    Pattern is the string passed to the pattern matcher.
+  Action Type: The name of the action (check out the __all__ list in actions.py
+    for a list of all available actions).
+  Action Args: A dict of arguments passed to the action. Arguments are Action
+    dependent, so have a look in form_display of the action class for the
+    necessary arguments. Possible text substitutions are available in
+    EventHandler.subs.
+
+
+Creating A New Pattern
+======================
+
+Create a new class in patterns.py with a the following:
+  displayname - a string with the pattern name that should be displayed to a
+    user in the graphical interface
+  match - a static method that accepts a pattern and an argument as parameters.
+    The pattern is provided in the save file, the argument is the filename
+    being matched against. Returns True on match, False otherwise.
+Then add the class' name (as a string) to the __all__ list at the top of the
+file.
+
+    
+Creating A New Action
+=====================
+
+Create a subclass of Action in actions.py with the following:
+  form_display - a tuple of action-argument tuples. The action-argument
+    tuples should contain the name of the argument and a description.
+  trigger - a static method accepting the action-arguments that are necessary
+    to run the action (usually as *args, **kwargs)
+    This should run the action with the provided arguments.
