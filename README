@@ -26,7 +26,7 @@ Running
 =======
 
 Until the graphical tool is complete, you must edit save.json to set your
-watches.
+watches. To start the application, run watcher.py
 In the rules list, add a new rule with the following data:
   Name: the name of the rule
   Description: a description of the rule
