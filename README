@@ -19,19 +19,19 @@ Installation
 ============
 
 Linux:
-No installation necessary.
+No installation necessary (or available yet, for that matter)
 
 
 Running
 =======
 
-Until the graphical tool is complete, you must edit save.json to set your
-watches. To start the application, run watcher.py
+Until the graphical tool is complete, you must edit settings.json to set your
+watches. To start the application, run ire.py
 In the rules list, add a new rule with the following data:
   Name: the name of the rule
   Description: a description of the rule
-  Pattern Type: one of AND or OR. Determines how multiple applied patterns
-    affect whether the rule matches.
+  Pattern Condition: one of "AND" or "OR". Determines how multiple applied
+    patterns affect whether the rule matches.
   Pattern List: a list of patterns. Style is the name of the pattern (check out
     the __all__ list in patterns.py for a complete list of available patterns).
     Pattern is the string passed to the pattern matcher.
@@ -61,7 +61,9 @@ Creating A New Action
 
 Create a subclass of Action in actions.py with the following:
   form_display - a tuple of action-argument tuples. The action-argument
-    tuples should contain the name of the argument and a description.
+    tuples should contain the name of the argument, a displayname,
+    and a description.
   trigger - a static method accepting the action-arguments that are necessary
-    to run the action (usually as *args, **kwargs)
-    This should run the action with the provided arguments.
+    to run the action (usually as **kwargs)
+    This should run the action with the provided arguments and a few internal
+    arguments (found in function EventHandler.to_sub).

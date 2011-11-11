@@ -1,62 +1,65 @@
+import shutil
 
-
-__all__ = ['Move', 'Shell', 'Alert']
-
-
-class Field(object):
-  pass
-
-
-# Represents a type of pattern
-# Simple (glob)
-# Complex (regex)
-class PatternField(object):
-  pass
+__all__ = ['Move', 'Log', 'Shell', 'Alert']
 
 
 class Action(object):
   form_display = ()
-  
-  @staticmethod
-  def trigger(self, *args, **kwargs):
-    raise NotImplementedError("Must create an action in subclass.")
-    
-  """def serialize():
-    return {}
-  """
 
+  @staticmethod
+  def trigger(**kwargs):
+    raise NotImplementedError("Must create an action in subclass.")
+  
+  # Should not be serialized because actions are "static classes"
+  """@staticmethod
+  def serialize(obj, **kwargs):
+    args = {}
+    for item, desc in obj.form_display:
+      if item in kwargs:
+        args[item] = kwargs[item]
+    return {"type": obj.__name__,
+            "args": args}
+  """
+  
 
 class Move(Action):
-  source = str
-  destination = str
-  
-  form_display = (("source", "Path of file to move."),
-                  ("destination", "Destination path and filename."))
+  displayname = "Move file"
+  form_display = (("destination", "to", "Destination path and filename."), )
   
   @staticmethod
-  def trigger(*args, **kwargs):
-    shutil.move(kwargs["source"], kwargs["destination"])
+  def trigger(**kwargs):
+    shutil.move(kwargs["_path"], kwargs["destination"])
+
+
+class Log(Action):
+  displayname = "Log"
+  form_display = (("text", "with message", "Text to write to the log file."),
+                  ("destination", "to", "File path to append to."))
+
+  @staticmethod
+  def trigger(**kwargs):
+    with open(kwargs["destination"], 'a') as f:
+      f.write(kwargs["text"] + '\n')
 
 
 class Alert(Action):
-  text = str
-  
-  form_display = (("text", "Message to display in the alert."),
+  displayname = "Send alert"
+  form_display = (("text", "with message", "Message to display in the alert."),
                   )
   
   @staticmethod
-  def trigger(*args, **kwargs):
+  def trigger(**kwargs):
     print kwargs["text"]
 
 
 class Shell(Action):
-  command = str
-  
-  form_display = (("command", "Full text of command to execute."),
+  displayname = "Execute"
+  form_display = (("command", "the shell command",
+                              "Full text of command to execute."),
                   )
   
   @staticmethod
-  def trigger(*args, **kwargs):
+  def trigger(**kwargs):
     import sys
     if sys.version_info.major < 3:
       # Unicode strings don't work in Popen in 2.x, encode to ascii

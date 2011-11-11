@@ -14,10 +14,28 @@ class UnknownPatternStyleError(PatternError):
     return "Unknown pattern style '{0}'".format(' '.join(self.args))
 
 
+"""
+class ExamplePattern(object):
+  displayname = "A string that fits in with 'Filename [displayname] entry"
+                Something like "matches", "starts with", etc.
+  description = "A regular expression to match on."
+  
+  @staticmethod
+  def match(pattern, arg):
+    ''' pattern is the pattern string from the settings file
+        arg is the filename that triggered the event
+        Returns a boolean.
+        Should capture all exceptions and reraise them as PatternErrors
+        with the captured exception as the "InnerException"
+    '''
+"""
+
+
 class RegexPattern(object):
   """ A pattern that matches any valid Python regular expression pattern.
   """
-  displayname = "regex"
+  displayname = "matches regex"
+  description = "A regular expression to match on."
   
   @staticmethod
   def match(pattern, arg):
@@ -31,7 +49,8 @@ class SimplePattern(object):
   """ A pattern that matches a simpler form of regex:
       Only *, ?, and [] are allowed.
   """
-  displayname = "simple"
+  displayname = "matches glob"
+  description = "Completion on *, ?, or []"
   
   @staticmethod
   def match(pattern, arg):
@@ -67,7 +86,7 @@ class MimetypePattern(object):
   """ A pattern that checks the filename against its
       guessed mimetype.
   """
-  displayname = "mimetype"
+  displayname = "mimetype is"
   
   @staticmethod
   def match(mimetype, arg):

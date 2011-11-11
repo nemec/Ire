@@ -1,0 +1,70 @@
+{
+  "rules": [
+    {
+      "name": "Images",
+      "description": "Alert whenever images are downloaded",
+      "pattern_condition": "AND",
+      "pattern_list": [
+        {
+          "style": "EndsWithPattern",
+          "pattern": ".png"
+        }
+      ],
+      "actions": [
+        {
+          "type": "Alert",
+          "args":
+          {
+            "text": "AND: %s"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Torrent",
+      "description": "Opens Torrent files automatically.",
+      "pattern_condition": "OR",
+      "pattern_list": [
+        {
+          "style": "EndsWithPattern",
+          "pattern": ".torrent"
+        }
+      ],
+      "actions": [
+        {
+          "type": "Shell",
+          "args":
+          {
+            "command": "xdg-open '%s'"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mimetype",
+      "description": "Matches on a mimetype",
+      "pattern_condition": "OR",
+      "pattern_list": [
+        {
+          "style": "MimetypePattern",
+          "pattern": "application/json"
+        }
+      ],
+      "actions": [
+        {
+          "type": "Alert",
+          "args":
+          {
+            "text": "Mimetype json %s"
+          }
+        }
+      ]
+    }
+  ],
+  "watches": [
+    {
+      "location": "~/tmp",
+      "rules": ["Images", "Mimetype"]
+    }
+  ]
+}
