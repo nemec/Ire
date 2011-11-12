@@ -65,6 +65,9 @@ class Item(gtk.HBox):
     self.minus = gtk.Button("-")
     self.pack_end(self.minus, expand=False)
 
+  def is_complete(self):
+    raise NotImplementedError
+
 
 class ActionItem(Item):
   def __init__(self):
@@ -111,7 +114,14 @@ class ActionItem(Item):
       self.action_forms.pack_start(entry)
     self.action_forms.show_all()
 
-  def get_active_action(self):
+  def is_complete(self):
+    """The active action is filled in.
+      Return True if each textbox is not empty.
+
+    """
+    return all(len(x) > 0 for x in self.get_active_choice().values())
+
+  def get_active_choice(self):
     active_ix = self.action_chooser.get_active()
     action_type = self.action_model[active_ix][0]
     args = {}
@@ -153,7 +163,14 @@ class PatternItem(Item):
     self.text = gtk.Entry()
     self.pack_start(self.text)
 
-  def get_active_pattern(self):
+  def is_complete(self):
+    """The active pattern is filled in.
+      The textbox that contains the pattern is not empty.
+
+    """
+    return all(len(x) > 0 for x in self.get_active_choice().values())
+
+  def get_active_choice(self):
     return {
             "style": self.pattern_model[self.pattern_chooser.get_active()][0],
             "pattern": self.text.get_text()
@@ -279,22 +296,27 @@ class AddRuleDialog(gtk.Dialog):
     self.show_all()
   
   def get_rule(self):
+    name = self.name_entry.get_text()
+    desc = self.description_entry.get_text()
     pattern_condition = self.condition_model[self.condition.get_active()][0]
 
     pattern_list = []
     for item in self.pattern_container.get_items():
-      pattern_list.append(item.get_active_pattern())
+      if item.is_complete():
+        pattern_list.append(item.get_active_choice())
 
     action_list = []
     for item in self.action_container.get_items():
-      action_list.append(item.get_active_action())
+      if item.is_complete():
+        action_list.append(item.get_active_choice())
 
-    return Rule(
-      name=self.name_entry.get_text(),
-      description=self.description_entry.get_text(),
-      pattern_condition=pattern_condition,
-      pattern_list=pattern_list,
-      actions=action_list)
+    if all(len(x) > 0 for x in (name, pattern_list, action_list)):
+      return Rule(
+        name=name,
+        description=desc,
+        pattern_condition=pattern_condition,
+        pattern_list=pattern_list,
+        actions=action_list)
 
 
 class AddWatchDialog(gtk.Dialog):
@@ -343,10 +365,18 @@ class AddWatchDialog(gtk.Dialog):
     self.toggle_model[row][0] = not self.toggle_model[row][0]
   
   def get_watch(self):
-    return {
-      "location": self.folder_button.get_filename(),
-      "rules": [r[2].name for r in self.toggle_model if r[0]]
-    }
+    """Convert the data entered into the form into a dictionary
+      containing the chosen filename and rules.
+      If no data exists for either key, return None.
+
+    """
+    fname = self.folder_button.get_filename()
+    rules = [r[2].name for r in self.toggle_model if r[0]]
+    if all(len(x) for x in (fname, rules)):
+      return {
+        "location": fname,
+        "rules": rules
+      }
 
 
 class IreUI(gtk.Window):
@@ -359,8 +389,6 @@ class IreUI(gtk.Window):
     self.set_size_request(500, 400)
     self.connect("delete-event", self.save_if_necessary)
     self.connect("destroy", gtk.main_quit)
-    self.loaded_file = None
-    self.unsaved = False
     self.set_title(self.title_format)
 
     accel_group = gtk.AccelGroup()
@@ -388,12 +416,15 @@ class IreUI(gtk.Window):
     filter.add_pattern("*")
     self.config_filters.append(filter)
     
+    def mark_unsaved(*args):
+      self.unsaved_edits = True
+    
     self.rule_model = gtk.ListStore(str, object)  # (String-rule, Rule object)
-    self.rule_model.connect("row_changed", self.mark_file_edited)
-    self.rule_model.connect("row_inserted", self.mark_file_edited)
+    self.rule_model.connect("row_changed", mark_unsaved)
+    self.rule_model.connect("row_inserted", mark_unsaved)
     self.watch_model = gtk.ListStore(str, object)  # (String-watch, Watch dict)
-    self.watch_model.connect("row_changed", self.mark_file_edited)
-    self.watch_model.connect("row_inserted", self.mark_file_edited)
+    self.watch_model.connect("row_changed", mark_unsaved)
+    self.watch_model.connect("row_inserted", mark_unsaved)
     
     menu_box = gtk.VBox()
     menu_box.pack_start(self.item_factory.get_widget("<main>"), expand=False)
@@ -483,47 +514,73 @@ class IreUI(gtk.Window):
     self.show_all()
 
   def create_rule(self, btn):
-    """Displays the dialog for creating a new rule.
+    """Display the dialog for creating a new rule.
       The rule is retrieved from the dialog and appended to the model.
 
     """
     dg = AddRuleDialog()
     dg.set_transient_for(self)
 
-    response = dg.run()
-    dg.hide()
-    if response == gtk.RESPONSE_OK:
+    rule = None
+    while rule is None:
+      response = dg.run()
       rule = dg.get_rule()
-      self.rule_model.append(self.build_rule_model_row(rule))
+      if response == gtk.RESPONSE_OK:
+        if rule is not None:
+          self.rule_model.append(self.build_rule_model_row(rule))
+          break
+      elif response in (gtk.RESPONSE_CANCEL, gtk.RESPONSE_DELETE_EVENT):
+        break
+      else:
+        print response
+      validdg = gtk.MessageDialog(buttons=gtk.BUTTONS_OK,
+          message_format="All entries in the form must be filled.")
+      validdg.run()
+      validdg.hide()
+    dg.hide()
 
   def build_rule_model_row(self, rule):
-    """Formats the rule for displaying in the main view.
+    """Format the rule for displaying in the main view.
       The display name and the rule itself are returned for
       insertion into the model.
     
     """
-    display = "{0}: {1}".format(rule.name, rule.description)
+    if len(rule.description):
+      display = "{0}: {1}".format(rule.name, rule.description)
+    else:
+      display = rule.name
     return (display, rule)
   
   def edit_rule(self, view, path, col):
+    """Display a dialog that allows editing of a previously created rule."""
     pass
   
   def create_watch(self, btn):
-    """Displays the dialog for creating a new watch.
+    """Display the dialog for creating a new watch.
       The watch is retrieved from the dialog and appended to the model.
 
     """
     dg = AddWatchDialog(self.rule_model)
     dg.set_transient_for(self)
     
-    response = dg.run()
-    dg.hide()
-    if response == gtk.RESPONSE_OK:
+    watch = None
+    while watch is None:
+      response = dg.run()
       watch = dg.get_watch()
-      self.watch_model.append(self.build_watch_model_row(watch))
+      if response == gtk.RESPONSE_OK:
+        if watch is not None:
+          self.watch_model.append(self.build_watch_model_row(watch))
+          break
+      elif response in (gtk.RESPONSE_CANCEL, gtk.RESPONSE_DELETE_EVENT):
+        break
+      validdg = gtk.MessageDialog(buttons=gtk.BUTTONS_OK,
+          message_format="Both a folder and a set of rules must be chosen.")
+      validdg.run()
+      validdg.hide()
+    dg.hide()
   
   def build_watch_model_row(self, watch):
-    """Formats the watch for displaying in the main view.
+    """Format the watch for displaying in the main view.
       The display name and the watch itself are returned for
       insertion into the model.
     
@@ -532,35 +589,49 @@ class IreUI(gtk.Window):
     return (display, watch)
 
   def edit_watch(self, view, path, col):
+    """Display a dialog that allows editing of a previously created watch."""
     pass
 
-  def _get_title_format(self):
+  __loaded_file = None
+  @property
+  def loaded_file(self):
+    return self.__loaded_file
+  @loaded_file.setter
+  def loaded_file(self, name):
+    self.__loaded_file = name
+    self.set_title(self.title_format)
+
+  @property
+  def title_format(self):
     """Return the format for the window's title.
       The format is similar to the one used by gedit.
 
     """
+    unsaved = "*" if self.unsaved_edits else ""
     if self.loaded_file:
       path, fname = os.path.split(self.loaded_file)
       home = os.path.expanduser("~")
       if path.startswith(home):
         path = re.sub(home, "~", path)
-      return "{0} ({1}) - Ire".format(fname, path)
+      return "{0}{1} ({2}) - Ire".format(unsaved, fname, path)
     else:
-      return "{0} - Ire".format("Untitled")
-  title_format = property(_get_title_format)
+      return "{0}{1} - Ire".format(unsaved, "Untitled")
 
-  def mark_file_edited(self, *args, **kwargs):
-    self.unsaved = True
-    self.set_title("*" + self.title_format)
-  
-  def clear_file_edited(self, *args, **kwargs):
-    self.unsaved = False
+  __unsaved_edits = False
+  @property
+  def unsaved_edits(self):
+    return self.__unsaved_edits
+  @unsaved_edits.setter
+  def unsaved_edits(self, value):
+    self.__unsaved_edits = value
     self.set_title(self.title_format)
 
-  def new_settings_file(self, win, menu_item):
+  def new_settings_file(self, *args):
+    """Discard the current settings file and create a new one."""
     pass
     
-  def open_settings_file(self, win, menu_item):
+  def open_settings_file(self, *args):
+    """Open a settings file and parse it for watches and rules."""
     dg = gtk.FileChooserDialog("Save", action=gtk.FILE_CHOOSER_ACTION_OPEN,
                             buttons=(gtk.STOCK_CANCEL,gtk.RESPONSE_CANCEL,
                                       gtk.STOCK_OPEN,gtk.RESPONSE_OK))
@@ -584,34 +655,41 @@ class IreUI(gtk.Window):
       if "watches" in settings:
         for watch in settings["watches"]:
           self.watch_model.append(self.build_watch_model_row(watch))
-      self.clear_file_edited()
+      self.unsaved_edits = False
   
-  def save_if_necessary(self, w=None, event=None):
-    """Ensures that any unsaved data is either saved or confirmed
+  def save_if_necessary(self, *args):
+    """Ensure that any unsaved data is either saved or confirmed
       to discard before closing the application.
 
     """
-    if self.unsaved:
+    if self.unsaved_edits:
       dg = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
               message_format='Save changed to "{0}" before closing?'.format(
                 self.loaded_file or "Untitled"))
       dg.set_modal(True)
       
-      dg.add_button("Close without Saving", gtk.RESPONSE_NO)
+      dg.add_button("Close without Saving", gtk.RESPONSE_CLOSE)
       dg.add_button(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL)
       if self.loaded_file is None:
-        dg.add_button(gtk.STOCK_SAVE_AS, gtk.RESPONSE_OK)
+        dg.add_button(gtk.STOCK_SAVE_AS, gtk.RESPONSE_YES)
       else:
         dg.add_button(gtk.STOCK_SAVE, gtk.RESPONSE_OK)
       response = dg.run()
       dg.hide()
-      if response == gtk.RESPONSE_OK:
+      if response == gtk.RESPONSE_YES:
         self.save_as_settings_file()
+      elif response == gtk.RESPONSE_OK:
+        self.save_settings_file()
       elif response == gtk.RESPONSE_CANCEL:
         return True  # Stop propogation of event so window stays open
     return False  # Propogates event
   
-  def save_settings_file(self, win=None, menu_item=None):
+  def save_settings_file(self, *args):
+    """Save the current data to a file.
+      If there is no destination file, display the Save As dialog first.
+      Return True if the file was saved, False otherwise.
+
+    """
     if self.loaded_file is None:
       return self.save_as_settings_file()
     else:
@@ -623,13 +701,17 @@ class IreUI(gtk.Window):
           for watch in self.watch_model:
             obj["watches"].append(watch[1])
           json.dump(obj, f, cls=SettingsEncoder)
-        self.clear_file_edited()
+        self.unsaved_edits = False
         return True
       except IOError as e:
         print e
     return False
   
-  def save_as_settings_file(self, win=None, menu_item=None):
+  def save_as_settings_file(self, *args):
+    """Open a FileChooserDialog to pick the new file to save to.
+      Return True if file was saved, False otherwise.
+    
+    """
     dg = gtk.FileChooserDialog("Save", action=gtk.FILE_CHOOSER_ACTION_SAVE,
               buttons=(gtk.STOCK_CANCEL,gtk.RESPONSE_CANCEL,
                         gtk.STOCK_SAVE,gtk.RESPONSE_OK))
@@ -638,12 +720,14 @@ class IreUI(gtk.Window):
     response = dg.run()
     dg.hide()
     if response == gtk.RESPONSE_OK:
-      self.loaded_file = dg.get_filename()
-      if self.loaded_file is not None:
+      fname = dg.get_filename()
+      if fname is not None:
+        self.loaded_file = fname
         return self.save_settings_file()
     return False
     
   def help_about(self, win=None, menu_item=None):
+    """Display all Help information."""
     pass
 
 if __name__ == "__main__":
