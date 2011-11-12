@@ -1,4 +1,5 @@
 import re
+import os
 import gtk
 import json
 import gobject
@@ -61,10 +62,7 @@ class AutoCompleteActionEntry(gtk.Entry):
 class Item(gtk.HBox):
   def __init__(self):
     super(Item, self).__init__()
-    self.plus = gtk.Button("+")
     self.minus = gtk.Button("-")
-    
-    self.pack_end(self.plus, expand=False)
     self.pack_end(self.minus, expand=False)
 
 
@@ -161,39 +159,66 @@ class PatternItem(Item):
             "pattern": self.text.get_text()
            }
 
-class ExpandableContainer(gtk.VBox):
-  def __init__(self, item_type):
+class ExpandableContainer(gtk.HBox):
+  """A container that holds a varying number of inner widgets.
+    Widgets can be added and removed by clicking on the + or - buttons
+    next to each widget.
+
+  """
+  def __init__(self, item_factory):
     super(ExpandableContainer, self).__init__()
-    self.item_type = item_type
+    self.item_factory = item_factory
+    
+    self.container = gtk.VBox()
+    self.pack_start(self.container)
+    
+    spacer = gtk.Alignment(0, 1, 0, 0)
+    plus = gtk.Button("+")
+    plus.connect("clicked", self.add_item)
+    spacer.add(plus)
+    self.pack_start(spacer, expand=False)
+    
     self.add_item(None)
   
   def add_item(self, obj):
-    item = self.item_type()
-    item.plus.connect("clicked", self.add_item)
-    item.minus.connect("clicked", self.remove_item)
+    """Add a new item to the bottom of the widget.
+      Item is created from the factory function and its - button
+      set to remove the item when clicked.
+
+    """
+    item = self.item_factory()
+    item.minus.connect("clicked", self.remove_item, item)
     
-    if len(self.get_children()) == 0:
+    if len(self.container.get_children()) == 0:
       item.minus.set_sensitive(False)
     else:
-      for child in self.get_children():
+      for child in self.container.get_children():
         child.minus.set_sensitive(True)
 
-    self.pack_start(item, expand=False)
+    self.container.pack_start(item, expand=False)
     item.show_all()
   
-  def remove_item(self, minus_button):
-    self.remove(minus_button.parent)
-    if len(self.get_children()) == 1:
-      for child in self.get_children():
+  def remove_item(self, minus_button, item):
+    """Remove the item from the container.
+      If there is only one item remaining in the
+      container, disable its remove button.
+
+    """
+    self.container.remove(item)
+    if len(self.container.get_children()) == 1:
+      for child in self.container.get_children():
         child.minus.set_sensitive(False)
+
+  def get_items(self):
+    return self.container.get_children()
 
 
 class AddRuleDialog(gtk.Dialog):
   def __init__(self):
     super(AddRuleDialog, self).__init__(title="Add Rule")
     self.set_modal(True)
-    self.add_button(gtk.STOCK_OK, 1)
-    self.add_button(gtk.STOCK_CANCEL, -1)
+    self.add_button(gtk.STOCK_OK, gtk.RESPONSE_OK)
+    self.add_button(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL)
 
     h_layout = gtk.HBox()
     v_layout = gtk.VBox()
@@ -257,11 +282,11 @@ class AddRuleDialog(gtk.Dialog):
     pattern_condition = self.condition_model[self.condition.get_active()][0]
 
     pattern_list = []
-    for item in self.pattern_container.get_children():
+    for item in self.pattern_container.get_items():
       pattern_list.append(item.get_active_pattern())
 
     action_list = []
-    for item in self.action_container.get_children():
+    for item in self.action_container.get_items():
       action_list.append(item.get_active_action())
 
     return Rule(
@@ -276,8 +301,8 @@ class AddWatchDialog(gtk.Dialog):
   def __init__(self, rule_model):
     super(AddWatchDialog, self).__init__(title="Add Watch")
     self.set_modal(True)
-    self.add_button(gtk.STOCK_OK, 1)
-    self.add_button(gtk.STOCK_CANCEL, -1)
+    self.add_button(gtk.STOCK_OK, gtk.RESPONSE_OK)
+    self.add_button(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL)
 
     self.toggle_model = gtk.ListStore(bool, str, object)
     for row in rule_model:
@@ -325,13 +350,18 @@ class AddWatchDialog(gtk.Dialog):
 
 
 class IreUI(gtk.Window):
+  """The main window for the UI.
+    Contains the menu and allows adding custom watches and rules.
+  
+  """
   def __init__(self):
     super(IreUI, self).__init__()
     self.set_size_request(500, 400)
-    self.set_title("Ire")
-    
+    self.connect("delete-event", self.save_if_necessary)
     self.connect("destroy", gtk.main_quit)
     self.loaded_file = None
+    self.unsaved = False
+    self.set_title(self.title_format)
 
     accel_group = gtk.AccelGroup()
     self.menu_items = (
@@ -348,6 +378,16 @@ class IreUI(gtk.Window):
     self.item_factory = gtk.ItemFactory(gtk.MenuBar, "<main>", accel_group)
     self.item_factory.create_items(self.menu_items)
     
+    self.config_filters = []
+    filter = gtk.FileFilter()
+    filter.set_name("Config Files (*.conf)")
+    filter.add_pattern("*.conf")
+    self.config_filters.append(filter)
+    filter = gtk.FileFilter()
+    filter.set_name("All Files")
+    filter.add_pattern("*")
+    self.config_filters.append(filter)
+    
     self.rule_model = gtk.ListStore(str, object)  # (String-rule, Rule object)
     self.rule_model.connect("row_changed", self.mark_file_edited)
     self.rule_model.connect("row_inserted", self.mark_file_edited)
@@ -356,117 +396,176 @@ class IreUI(gtk.Window):
     self.watch_model.connect("row_inserted", self.mark_file_edited)
     
     menu_box = gtk.VBox()
+    menu_box.pack_start(self.item_factory.get_widget("<main>"), expand=False)
     border = gtk.HBox()
+    menu_box.pack_start(border)
     vbox = gtk.VBox()
+    border.pack_start(vbox, padding=5)
+
+    """Creates the "Rules" view, with its associated labels and buttons."""
     rule_label = gtk.Label("Rules:")
     rule_label.set_alignment(0, 0)
+    vbox.pack_start(rule_label, expand=False, padding=5)
+
     rule_box = gtk.HBox()
+    vbox.pack_start(rule_box)
     rule_scroll = gtk.ScrolledWindow()
+    rule_box.pack_start(rule_scroll)
     rule_view = gtk.TreeView(model=self.rule_model)
+    rule_view.set_headers_visible(False)
+    rule_view.connect("row-activated", self.edit_rule)
+    rule_view.connect("cursor_changed",
+      lambda x: self.rule_remove.set_sensitive(True))
     rule_scroll.add(rule_view)
     cell = gtk.CellRendererText()
     rule_column = gtk.TreeViewColumn('Rules', cell)
     rule_column.add_attribute(cell, 'text', 0)
     rule_view.append_column(rule_column)
-    rule_view.set_headers_visible(False)
-    rule_button = gtk.Button("+")
-    rule_button.set_alignment(1, 1)
-    rule_button.connect("clicked", self.create_rule)
     r_small = gtk.VBox()
-    r_small.pack_end(rule_button, expand=False)
-    rule_box.pack_start(rule_scroll)
+    rule_add = gtk.Button("+")
+    rule_add.connect("clicked", self.create_rule)
+    r_small.pack_end(rule_add, expand=False)
+    self.rule_remove = gtk.Button("-")
+    self.rule_remove.set_sensitive(False)
+    def remove_selected_rule(btn):
+      dg = gtk.MessageDialog(type=gtk.MESSAGE_QUESTION, buttons=gtk.BUTTONS_YES_NO,
+        message_format="Are you sure you want to remove this rule?")
+      resp = dg.run()
+      dg.hide()
+      if resp == gtk.RESPONSE_YES:
+        self.rule_model.remove(self.rule_model.get_iter(rule_view.get_cursor()[0]))
+        self.rule_remove.set_sensitive(False)
+    self.rule_remove.connect("clicked", remove_selected_rule)
+    r_small.pack_end(self.rule_remove, expand=False)
     rule_box.pack_start(r_small, expand=False)
-    
+
+    """Creates the "Watches" view, with its associated labels and buttons."""
     watch_label = gtk.Label("Watches:")
     watch_label.set_alignment(0, 0)
+    vbox.pack_start(watch_label, expand=False, padding=5)
+
     watch_box = gtk.HBox()
     watch_scroll = gtk.ScrolledWindow()
+    watch_box.pack_start(watch_scroll)
     watch_view = gtk.TreeView(model=self.watch_model)
+    watch_view.set_headers_visible(False)
+    watch_view.connect("row-activated", self.edit_watch)
+    watch_view.connect("cursor_changed",
+      lambda x: self.watch_remove.set_sensitive(True))
     watch_scroll.add(watch_view)
     cell = gtk.CellRendererText()
     watch_column = gtk.TreeViewColumn('Watches', cell)
     watch_column.add_attribute(cell, 'text', 0)
     watch_view.append_column(watch_column)
-    watch_view.set_headers_visible(False)
-    watch_button = gtk.Button("+")
-    watch_button.set_alignment(1, 1)
-    watch_button.connect("clicked", self.create_watch)
     w_small = gtk.VBox()
-    w_small.pack_end(watch_button, expand=False)
-    watch_box.pack_start(watch_scroll)
+    watch_add = gtk.Button("+")
+    watch_add.connect("clicked", self.create_watch)
+    w_small.pack_end(watch_add, expand=False)
+    self.watch_remove = gtk.Button("-")
+    self.watch_remove.set_sensitive(False)
+    def remove_selected_watch(btn):
+      dg = gtk.MessageDialog(type=gtk.MESSAGE_QUESTION, buttons=gtk.BUTTONS_YES_NO,
+        message_format="Are you sure you want to remove this watch?")
+      resp = dg.run()
+      dg.hide()
+      if resp == gtk.RESPONSE_YES:
+        self.watch_model.remove(self.watch_model.get_iter(watch_view.get_cursor()[0]))
+        self.watch_remove.set_sensitive(False)
+    self.watch_remove.connect("clicked", remove_selected_watch)
+    w_small.pack_end(self.watch_remove, expand=False)
     watch_box.pack_start(w_small, expand=False)
-    
-    vbox.pack_start(rule_label, expand=False, padding=5)
-    vbox.pack_start(rule_box)
-    vbox.pack_start(watch_label, expand=False, padding=5)
     vbox.pack_start(watch_box)
-    bottom_align = gtk.Alignment(0, 1, 0, 1)
+    
+    bottom_align = gtk.Alignment(0, 0, 0, 0)
     vbox.pack_end(bottom_align)
     
-    border.pack_start(vbox, padding=5)
-    menu_box.pack_start(self.item_factory.get_widget("<main>"), expand=False)
-    menu_box.pack_start(border)
     self.add(menu_box)
     self.show_all()
 
   def create_rule(self, btn):
+    """Displays the dialog for creating a new rule.
+      The rule is retrieved from the dialog and appended to the model.
+
+    """
     dg = AddRuleDialog()
     dg.set_transient_for(self)
 
     response = dg.run()
     dg.hide()
-    if response == 1:
+    if response == gtk.RESPONSE_OK:
       rule = dg.get_rule()
       self.rule_model.append(self.build_rule_model_row(rule))
 
   def build_rule_model_row(self, rule):
+    """Formats the rule for displaying in the main view.
+      The display name and the rule itself are returned for
+      insertion into the model.
+    
+    """
     display = "{0}: {1}".format(rule.name, rule.description)
     return (display, rule)
   
+  def edit_rule(self, view, path, col):
+    pass
+  
   def create_watch(self, btn):
+    """Displays the dialog for creating a new watch.
+      The watch is retrieved from the dialog and appended to the model.
+
+    """
     dg = AddWatchDialog(self.rule_model)
     dg.set_transient_for(self)
     
     response = dg.run()
     dg.hide()
-    if response == 1:
+    if response == gtk.RESPONSE_OK:
       watch = dg.get_watch()
-      self.watch_model.append(watch)
+      self.watch_model.append(self.build_watch_model_row(watch))
   
   def build_watch_model_row(self, watch):
-    display = "{0}: {1}".format(watch["location"], watch["rules"])
+    """Formats the watch for displaying in the main view.
+      The display name and the watch itself are returned for
+      insertion into the model.
+    
+    """
+    display = "{0}: [{1}]".format(watch["location"], ', '.join(watch["rules"]))
     return (display, watch)
 
-  def save_and_exit(self):
+  def edit_watch(self, view, path, col):
     pass
+
+  def _get_title_format(self):
+    """Return the format for the window's title.
+      The format is similar to the one used by gedit.
+
+    """
+    if self.loaded_file:
+      path, fname = os.path.split(self.loaded_file)
+      home = os.path.expanduser("~")
+      if path.startswith(home):
+        path = re.sub(home, "~", path)
+      return "{0} ({1}) - Ire".format(fname, path)
+    else:
+      return "{0} - Ire".format("Untitled")
+  title_format = property(_get_title_format)
 
   def mark_file_edited(self, *args, **kwargs):
     self.unsaved = True
-    title = self.get_title()
-    if not title.startswith("*"):
-      self.set_title("*" + title)
+    self.set_title("*" + self.title_format)
   
   def clear_file_edited(self, *args, **kwargs):
     self.unsaved = False
-    title = self.get_title()
-    if title.startswith("*"):
-      self.set_title(title[1:])
+    self.set_title(self.title_format)
 
-  def new_settings_file(self, win, data):
-    print data
+  def new_settings_file(self, win, menu_item):
+    pass
     
-  def open_settings_file(self, win, data):
+  def open_settings_file(self, win, menu_item):
     dg = gtk.FileChooserDialog("Save", action=gtk.FILE_CHOOSER_ACTION_OPEN,
                             buttons=(gtk.STOCK_CANCEL,gtk.RESPONSE_CANCEL,
                                       gtk.STOCK_OPEN,gtk.RESPONSE_OK))
-    filter = gtk.FileFilter()
-    filter.set_name("Config Files (*.conf)")
-    filter.add_pattern("*.conf")
-    dg.add_filter(filter)
-    filter = gtk.FileFilter()
-    filter.set_name("All Files (*.*)")
-    filter.add_pattern("*")
-    dg.add_filter(filter)
+    for filter in self.config_filters:
+      dg.add_filter(filter)
     response = dg.run()
     dg.hide()
     if response == gtk.RESPONSE_OK:
@@ -485,10 +584,36 @@ class IreUI(gtk.Window):
       if "watches" in settings:
         for watch in settings["watches"]:
           self.watch_model.append(self.build_watch_model_row(watch))
-    
-  def save_settings_file(self, win, data):
+      self.clear_file_edited()
+  
+  def save_if_necessary(self, w=None, event=None):
+    """Ensures that any unsaved data is either saved or confirmed
+      to discard before closing the application.
+
+    """
+    if self.unsaved:
+      dg = gtk.MessageDialog(type=gtk.MESSAGE_WARNING,
+              message_format='Save changed to "{0}" before closing?'.format(
+                self.loaded_file or "Untitled"))
+      dg.set_modal(True)
+      
+      dg.add_button("Close without Saving", gtk.RESPONSE_NO)
+      dg.add_button(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL)
+      if self.loaded_file is None:
+        dg.add_button(gtk.STOCK_SAVE_AS, gtk.RESPONSE_OK)
+      else:
+        dg.add_button(gtk.STOCK_SAVE, gtk.RESPONSE_OK)
+      response = dg.run()
+      dg.hide()
+      if response == gtk.RESPONSE_OK:
+        self.save_as_settings_file()
+      elif response == gtk.RESPONSE_CANCEL:
+        return True  # Stop propogation of event so window stays open
+    return False  # Propogates event
+  
+  def save_settings_file(self, win=None, menu_item=None):
     if self.loaded_file is None:
-      self.save_as_settings_file(None, None)
+      return self.save_as_settings_file()
     else:
       try:
         with open(self.loaded_file, 'w') as f:
@@ -499,29 +624,26 @@ class IreUI(gtk.Window):
             obj["watches"].append(watch[1])
           json.dump(obj, f, cls=SettingsEncoder)
         self.clear_file_edited()
+        return True
       except IOError as e:
         print e
+    return False
   
-  def save_as_settings_file(self, win, data):
+  def save_as_settings_file(self, win=None, menu_item=None):
     dg = gtk.FileChooserDialog("Save", action=gtk.FILE_CHOOSER_ACTION_SAVE,
               buttons=(gtk.STOCK_CANCEL,gtk.RESPONSE_CANCEL,
                         gtk.STOCK_SAVE,gtk.RESPONSE_OK))
-    filter = gtk.FileFilter()
-    filter.set_name("Config Files (*.conf)")
-    filter.add_pattern("*.conf")
-    dg.add_filter(filter)
-    filter = gtk.FileFilter()
-    filter.set_name("All Files (*.*)")
-    filter.add_pattern("*")
-    dg.add_filter(filter)
+    for filter in self.config_filters:
+      dg.add_filter(filter)
     response = dg.run()
     dg.hide()
     if response == gtk.RESPONSE_OK:
       self.loaded_file = dg.get_filename()
       if self.loaded_file is not None:
-        self.save_settings_file(None, None)
+        return self.save_settings_file()
+    return False
     
-  def help_about(self, win, data):
+  def help_about(self, win=None, menu_item=None):
     pass
 
 if __name__ == "__main__":
