@@ -5,7 +5,7 @@ import os
 import sys
 import argparse
 
-from ire.inotifyhandler import EventHandler
+import ire.eventhandler
 
 # ~/.local/share/Trash/
 # http://lxr.free-electrons.com/source/include/linux/inotify.h#L29
@@ -21,8 +21,8 @@ from ire.inotifyhandler import EventHandler
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description=
     "Watches folders for certain files and executes actions on them.\n"
-    "If -r is specified, the listed rules are immediately run and then "
-    "the program terminates.")
+    "If -r is specified, the listed rules are immediately run with the given "
+    "directory and then the program terminates.")
   parser.add_argument('-p', "--pidfile", action="store", dest="pidfile",
                       type=str, default=None,
                       help="The path to where the PID file should be created.")
@@ -38,9 +38,9 @@ if __name__ == "__main__":
                         "starting the event handler.")
   args = parser.parse_args()
 
-  handler = EventHandler(args.configfile)
-
-  if args.rules:  # Replace the default watches with provided custom watch.
+  if args.rules:
+    handler = ire.eventhandler.EventHandler(args.configfile)
+    # Replace the default watches with provided custom watch.
     handler.watches = [{
       "location": args.dir,
       "rules": args.rules
@@ -50,4 +50,10 @@ if __name__ == "__main__":
       rules = handler.matches(path, filename)
       handler.do_actions(rules, os.path.join(path, filename))
   else:
+    if True:  # Detect Linux here:
+      import ire.inotifyhandler
+      handler = ire.inotifyhandler.EventHandler(args.configfile)
+    else:
+      sys.stderr.write("Platform '{0}' not supported.\n".format("Unknown"))
+      sys.exit(1)
     handler.start()
