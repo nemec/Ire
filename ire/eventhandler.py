@@ -99,6 +99,7 @@ class EventHandler(object):
     
   
   def load_config(self, settingsfile):
+    """Load configuration from a filename."""
     try:
       with open(settingsfile, 'r') as f:
         settings = json.load(f, cls=SettingsDecoder)
@@ -107,17 +108,29 @@ class EventHandler(object):
       with locked(self.watches_lock):
         self.watches = settings["watches"]
     except IOError as e:
-      print "Could not load config."
+      raise Exception("Could not load config.")
 
   def config_reset_handler(self, signum, frame):
+    """Signal handler to reload configuration settings from a file."""
     self.load_config(self.settingsfile)
 
-  def matches(self, filename, watchid):
+  def matches(self, path, filename):
+    """
+    Return a list of rules that match the given filename.
+
+    Keyword arguments:
+    path -- The file path that determines valid rules.
+    filename -- The filename to match against valid rules.
+    
+    """
     matched = []
     
-    # Each entry in the pattern list contains the
-    # style and the pattern to match
     def get_pattern_class(pattern):
+      """
+      Each entry in the pattern list contains the
+      style and the pattern to match.
+
+      """
       style = pattern["style"]
       if style not in self.patterns:
         raise pattern_module.UnknownPatternStyleError(style)
@@ -134,14 +147,31 @@ class EventHandler(object):
           if func and func(get_pattern_class(pat) for pat in rule.pattern_list):
             with locked(self.watches_lock):
               for watch in self.watches:
-                if(watchid == os.path.expanduser(watch["location"]) and
+                if(path == os.path.expanduser(watch["location"]) and
                     rule.name in watch["rules"]):
                   matched.append(rule)
         except pattern_module.PatternError as e:
           print e
     return matched
+
+  def do_actions(self, rules, pathname):
+    """Combine the actions for each rule and execute them."""
+    actions = []
+    with locked(self.rules_lock):
+      for rule in rules:
+        actions.extend(rule.actions)
+
+    for action in actions:
+      args = self.sub_args(action["args"], pathname)
+      self.exe(action["type"], args)
   
   def sub_args(self, out, pathname):
+    """
+    Substitute text for shorthand directives (eg. %s) in all arguments.
+    Full list of subs can be found in EventHandler.subs
+
+    """
+
     to_sub = out.copy()
     for key in to_sub:
       for sub in self.subs:
@@ -153,11 +183,19 @@ class EventHandler(object):
     return to_sub
     
   def exe(self, action_type, kwdict):
+    """Execute the action with argument dictionary."""
     # TODO Spin off into threads? Might be helpful for long-running actions
+    if action_type not in self.actions:
+      raise KeyError("Unknown action type specified.")
     try:
       self.actions[action_type].trigger(**kwdict)
     except Exception as e:
       print e  # Don't want to crash everything... right?
   
   def start(self):
+    """
+    Watch the filesystem for changes in watched directories, matching and
+    executing actions for each change.
+
+    """
     raise NotImplementedError

@@ -1,21 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import re
 import os
 import gtk
 import json
-import gobject
 
-import actions
-import patterns
-from eventhandler import EventHandler, Rule, SettingsEncoder, SettingsDecoder
-
-# http://www.pygtk.org/pygtk2tutorial/sec-FileChoosers.html
-# http://www.pygtk.org/pygtk2tutorial/sec-TextBuffers.html#id2855626
-# http://www.pygtk.org/docs/pygtk/class-gtkentrycompletion.html
-# http://www.pygtk.org/docs/pygtk/class-gtktextbuffer.html#method-gtktextbuffer--apply-tag
+import ire.actions as actions
+import ire.patterns as patterns
+from ire.eventhandler import EventHandler, Rule, SettingsEncoder, SettingsDecoder
 
 
 class AutoCompleteActionEntry(gtk.Entry):
-  def __init__(self):
+  def __init__(self, model, text_column=0):
     super(AutoCompleteActionEntry, self).__init__()
     
     self.completion = gtk.EntryCompletion()
@@ -29,11 +26,11 @@ class AutoCompleteActionEntry(gtk.Entry):
     self.set_completion(self.completion)
     self.completion.connect("match-selected", self.add_tag)
 
-  def set_model(self, model, text_column=0):
     self.completion.set_model(model)
     self.completion.set_text_column(text_column)
 
   def completion_match(self, completion, entry, tree_iter):
+    """Check if the text in the entry matches up to any model text."""
     model = completion.get_model()
     modelstr = "%{0}".format(model[tree_iter][0])
     for match in re.findall("{0}\w*".format(EventHandler.sub_marker), entry):
@@ -42,6 +39,10 @@ class AutoCompleteActionEntry(gtk.Entry):
     return False
 
   def add_tag(self, completion, model, tree_iter):
+    """Format the selected item for entry into the textbox and
+      substitute it for the previously typed shortcut.
+
+    """
     pos = self.get_position()
     text = self.get_text()
     start = text.rfind(EventHandler.sub_marker, 0, pos)
@@ -104,12 +105,16 @@ class ActionItem(Item):
     self.pack_start(self.action_forms)
 
   def set_active_form(self, chooser, substitution_model):
+    """Set the active Action type's form elements.
+      Each Action has different arguments, so the form must be dynamically
+      created whenever a new action is chosen.
+
+    """
     self.action_forms.foreach(lambda w: self.action_forms.remove(w))
     args = self.action_arg_model[chooser.get_active()]
     for internal, display, description in args:
       label = gtk.Label(display)
-      entry = AutoCompleteActionEntry()
-      entry.set_model(substitution_model)
+      entry = AutoCompleteActionEntry(model=substitution_model)
       self.action_forms.pack_start(label, expand=False, padding=5)
       self.action_forms.pack_start(entry)
     self.action_forms.show_all()
@@ -122,6 +127,10 @@ class ActionItem(Item):
     return all(len(x) > 0 for x in self.get_active_choice().values())
 
   def get_active_choice(self):
+    """Collect the Action's type and arguments into a dictionary
+      for serialization.
+
+    """
     active_ix = self.action_chooser.get_active()
     action_type = self.action_model[active_ix][0]
     args = {}
@@ -296,6 +305,11 @@ class AddRuleDialog(gtk.Dialog):
     self.show_all()
   
   def get_rule(self):
+    """Iterate through all of the dialog's children and use filled-in
+      data to create a Rule object.
+      If not all of the data is completed, return None.
+
+    """
     name = self.name_entry.get_text()
     desc = self.description_entry.get_text()
     pattern_condition = self.condition_model[self.condition.get_active()][0]
@@ -401,7 +415,7 @@ class IreUI(gtk.Window):
       ( "/File/sep1",     None,         None, 0, "<Separator>" ),
       ( "/File/Quit",     "<ctl>Q", gtk.main_quit, 0, None ),
       ( "/_Help",         None,         None, 0, "<Branch>" ),
-      ( "/_Help/About",   None,     self.help_about, 0, None ),
+      ( "/_Help/About",   None,     self.about, 0, None ),
     )
     self.item_factory = gtk.ItemFactory(gtk.MenuBar, "<main>", accel_group)
     self.item_factory.create_items(self.menu_items)
@@ -628,7 +642,9 @@ class IreUI(gtk.Window):
 
   def new_settings_file(self, *args):
     """Discard the current settings file and create a new one."""
-    pass
+    self.default_settings = {
+      "pidfile": "/tmp/ire.pid"
+    }
     
   def open_settings_file(self, *args):
     """Open a settings file and parse it for watches and rules."""
@@ -726,9 +742,24 @@ class IreUI(gtk.Window):
         return self.save_settings_file()
     return False
     
-  def help_about(self, win=None, menu_item=None):
-    """Display all Help information."""
-    pass
+  def about(self, win=None, menu_item=None):
+    """Display the About dialog."""
+    dg = gtk.AboutDialog()
+    program_name = "Ire"
+    dg.set_program_name(program_name)
+    dg.set_title("About {0}".format(program_name))
+    dg.set_comments("Ire is a tool for watching folders on the filesystem "
+      "for activity and performing actions on new files.")
+    dg.set_version("0.8")
+    dg.set_copyright("(c) 2011 Daniel Nemec")
+    dg.set_website("http://github.com/nemec")
+    dg.set_logo(gtk.gdk.pixbuf_new_from_file("icons/ire.png"))
+    def close(win, resp):
+      if resp == gtk.RESPONSE_CANCEL:
+        win.hide()
+    dg.connect("response", close)
+    dg.show()
+    
 
 if __name__ == "__main__":
   w = IreUI()

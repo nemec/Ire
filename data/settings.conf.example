@@ -1,4 +1,7 @@
 {
+  "settings": {
+    "pidfile": "/tmp/ire.pid"
+  },
   "rules": [
     {
       "name": "Images",
