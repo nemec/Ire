@@ -1,3 +1,3 @@
-import actions
-import eventhandler
-import patterns
+from . import actions
+from . import eventhandler
+from . import patterns

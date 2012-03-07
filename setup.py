@@ -26,10 +26,10 @@ else:
 
 config_bin = os.path.splitext(config_application)[0]
 
-bin_dir = "build/bin/"
+bin_dir = "build/bin"
 
 try:
-  os.mkdir(bin_dir)
+  os.makedirs(bin_dir)
 except OSError:
   pass  # Dir already exists
 # remove .py from executables
@@ -43,7 +43,7 @@ setup(
     author_email="djnemec@gmail.com",
     url="https://github.com/nemec/Ire",
     version="0.8",
-    packages=["ire"],
+    packages=["ire", "ire.actions"],
     scripts=[os.path.join(bin_dir, x) for x in ["ire", config_bin]],
     data_files=data_files
 )

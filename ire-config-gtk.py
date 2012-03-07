@@ -143,7 +143,6 @@ class ActionItem(Item):
         arg_name, display, description = arg
         arg_content = child.get_text()
         args[arg_name] = arg_content
-        print arg_name
     return {"type": action_type, "args": args}
 
 
