@@ -25,8 +25,12 @@ No installation necessary (or available yet, for that matter)
 Running
 =======
 
-Until the graphical tool is complete, you must edit settings.json to set your
-watches. To start the application, run ire.py
+Configuration files may be created with the included ire-config-gtk tool or
+built manually. The settings file is built with JSON, so it is human readable.
+
+Creating A Config File By Hand
+------------------------------
+
 In the rules list, add a new rule with the following data:
   Name: the name of the rule
   Description: a description of the rule
@@ -66,4 +70,4 @@ Create a subclass of Action in actions.py with the following:
   trigger - a static method accepting the action-arguments that are necessary
     to run the action (usually as **kwargs)
     This should run the action with the provided arguments and a few internal
-    arguments (found in function EventHandler.to_sub).
+    arguments (found in function EventHandler.sub_args).

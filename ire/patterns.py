@@ -1,7 +1,7 @@
 import re
 import glob
 
-__all__ = ['RegexPattern', 'SimplePattern', 'StartsWithPattern',
+pattern_list = ['RegexPattern', 'SimplePattern', 'StartsWithPattern',
             'EndsWithPattern', 'MimetypePattern']
 
 

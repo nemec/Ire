@@ -67,6 +67,7 @@ class Item(gtk.HBox):
     self.pack_end(self.minus, expand=False)
 
   def is_complete(self):
+    """Validate the item. Must be implemented in a subclass."""
     raise NotImplementedError
 
 
@@ -81,7 +82,7 @@ class ActionItem(Item):
     # action (type, displayname, description)
     self.action_model = gtk.ListStore(str, str, str)
     self.action_arg_model = []  # (arg name, arg displayname, arg description)
-    for action in actions.__all__:
+    for action in actions.action_list:
       a = getattr(actions, action, None)
       self.action_model.append((
         a.__name__,  # Internal name, for saving to file.
@@ -134,15 +135,16 @@ class ActionItem(Item):
     active_ix = self.action_chooser.get_active()
     action_type = self.action_model[active_ix][0]
     args = {}
-    
-    arg_iter = iter(self.action_arg_model)
-    # Should be in order of addition, which is order of list
-    for child in self.action_forms.get_children():
-      if isinstance(child, AutoCompleteActionEntry):
-        arg_name, display, description = arg_iter.next()[0]
+
+    # All input boxes are currently AutoCompleteActionEntries
+    for child, arg in zip((c for c in self.action_forms.get_children()
+                            if isinstance(c, AutoCompleteActionEntry)),
+                      self.action_arg_model[self.action_chooser.get_active()]):
+        arg_name, display, description = arg
         arg_content = child.get_text()
         args[arg_name] = arg_content
-    return args
+        print arg_name
+    return {"type": action_type, "args": args}
 
 
 class PatternItem(Item):
@@ -150,7 +152,7 @@ class PatternItem(Item):
     super(PatternItem, self).__init__()
 
     self.pattern_model = gtk.ListStore(str, str, str)
-    for pattern in patterns.__all__:
+    for pattern in patterns.pattern_list:
       p = getattr(patterns, pattern, None)
       self.pattern_model.append((
         p.__name__,
@@ -257,7 +259,7 @@ class AddRuleDialog(gtk.Dialog):
     description_label = gtk.Label("Description:")
     label_box.pack_start(name_label, expand=False, padding=5)
     label_box.pack_start(description_label, expand=False, padding=5)
-    
+
     entry_box = gtk.VBox()
     self.name_entry = gtk.Entry()
     self.description_entry = gtk.Entry()
@@ -291,6 +293,10 @@ class AddRuleDialog(gtk.Dialog):
     v_layout.pack_start(pattern_box, padding=5)
     
     action_box = gtk.VBox()
+    sub_label = gtk.Label("Type % in an action to autocomplete shortcuts.")
+    sub_label.set_alignment(1, 0)
+    action_box.pack_start(sub_label, padding=3)
+
     action_label = gtk.Label("Do the following:")
     action_label.set_alignment(0, 0)
     action_box.pack_start(action_label, expand=False)
@@ -398,12 +404,16 @@ class IreUI(gtk.Window):
     Contains the menu and allows adding custom watches and rules.
   
   """
+  icon_file = "icons/ire.png"
+
   def __init__(self):
     super(IreUI, self).__init__()
     self.set_size_request(500, 400)
     self.connect("delete-event", self.save_if_necessary)
     self.connect("destroy", gtk.main_quit)
     self.set_title(self.title_format)
+
+    self.set_icon_from_file(self.icon_file)
 
     accel_group = gtk.AccelGroup()
     self.menu_items = (
@@ -716,7 +726,7 @@ class IreUI(gtk.Window):
             obj["rules"].append(rule[1])
           for watch in self.watch_model:
             obj["watches"].append(watch[1])
-          json.dump(obj, f, cls=SettingsEncoder)
+          json.dump(obj, f, cls=SettingsEncoder, indent=2)
         self.unsaved_edits = False
         return True
       except IOError as e:
@@ -753,7 +763,7 @@ class IreUI(gtk.Window):
     dg.set_version("0.8")
     dg.set_copyright("(c) 2011 Daniel Nemec")
     dg.set_website("http://github.com/nemec")
-    dg.set_logo(gtk.gdk.pixbuf_new_from_file("icons/ire.png"))
+    dg.set_logo(gtk.gdk.pixbuf_new_from_file(self.icon_file))
     def close(win, resp):
       if resp == gtk.RESPONSE_CANCEL:
         win.hide()

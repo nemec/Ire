@@ -92,10 +92,12 @@ class EventHandler(object):
     self.watches_lock = threading.Lock()
     self.load_config(settingsfile)
     
-    self.actions = dict(zip(action_module.__all__,
-      [getattr(action_module, action) for action in action_module.__all__]))
-    self.patterns = dict(zip(pattern_module.__all__,
-      [getattr(pattern_module, pattern) for pattern in pattern_module.__all__]))
+    self.actions = dict(zip(action_module.action_list,
+      [getattr(action_module, action) for action in
+                                          action_module.action_list]))
+    self.patterns = dict(zip(pattern_module.pattern_list,
+      [getattr(pattern_module, pattern) for pattern in
+                                            pattern_module.pattern_list]))
     
   
   def load_config(self, settingsfile):
@@ -189,8 +191,9 @@ class EventHandler(object):
       raise KeyError("Unknown action type specified.")
     try:
       self.actions[action_type].trigger(**kwdict)
-    except Exception as e:
-      print e  # Don't want to crash everything... right?
+    except Exception as e:  # Don't want to crash everything... right?
+      print ("Exception encountered running action "
+            "{0}: {1}".format(action_type, e))
   
   def start(self):
     """
