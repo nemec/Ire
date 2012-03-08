@@ -22,7 +22,9 @@ def import_action(cls, frm=None):
     globals()[cls] = getattr(tmp, cls)
     action_list.append(cls)
   except PlatformError:
-    pass
+    print "Action {0} is not available on this platform.".format(cls)
+  except ImportError as e:
+    print "Error importing action {0}: {1}".format(cls, e)
 
 import_action('Alert', frm='alert')
 import_action('Log', frm='log')

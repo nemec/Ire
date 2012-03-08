@@ -14,6 +14,9 @@ Requirements
 
 PyInotify: http://pyinotify.sourceforge.net/
 
+Notifications:
+  PyNotify (package python-notify)
+
 
 Installation
 ============
@@ -37,9 +40,9 @@ In the rules list, add a new rule with the following data:
   Pattern Condition: one of "AND" or "OR". Determines how multiple applied
     patterns affect whether the rule matches.
   Pattern List: a list of patterns. Style is the name of the pattern (check out
-    the __all__ list in patterns.py for a complete list of available patterns).
+    pattern_list in patterns.py for a complete list of available patterns).
     Pattern is the string passed to the pattern matcher.
-  Action Type: The name of the action (check out the __all__ list in actions.py
+  Action Type: The name of the action (check out the ire.actions package
     for a list of all available actions).
   Action Args: A dict of arguments passed to the action. Arguments are Action
     dependent, so have a look in form_display of the action class for the
@@ -56,14 +59,15 @@ Create a new class in patterns.py with a the following:
   match - a static method that accepts a pattern and an argument as parameters.
     The pattern is provided in the save file, the argument is the filename
     being matched against. Returns True on match, False otherwise.
-Then add the class' name (as a string) to the __all__ list at the top of the
-file.
+Then add the class' name (as a string) to the pattern_list list at the top of
+the file.
 
     
 Creating A New Action
 =====================
 
-Create a subclass of Action in actions.py with the following:
+Create a module in ire.actions with a class with three attributes:
+  displayname - The display name of the action.
   form_display - a tuple of action-argument tuples. The action-argument
     tuples should contain the name of the argument, a displayname,
     and a description.
@@ -71,3 +75,5 @@ Create a subclass of Action in actions.py with the following:
     to run the action (usually as **kwargs)
     This should run the action with the provided arguments and a few internal
     arguments (found in function EventHandler.sub_args).
+Then add a line to actions.__init__.py for your action:
+  import_action('class', frm='module')

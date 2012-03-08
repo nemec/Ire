@@ -5,8 +5,8 @@ import os
 import shutil
 from distutils.core import setup
 
+from ire.autoplatform import platform
 
-platform = "linux"
 
 if platform == "linux":  # Autodetect platform (Win, Mac, Linux)
   config_application = "ire-config-gtk.py"
